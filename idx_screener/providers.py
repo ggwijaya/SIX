@@ -20,7 +20,7 @@ class BaseProvider:
         headers = kwargs.pop("headers", {})
         headers.setdefault(
             "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) IDX-Screener/1.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) HexInc/1.0",
         )
         last_error: Optional[Exception] = None
         for attempt in range(self.retries + 1):

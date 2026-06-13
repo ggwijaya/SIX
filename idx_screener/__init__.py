@@ -1,1 +1,1 @@
-"""IDX Technical Screener package."""
+"""HexInc market screener package."""

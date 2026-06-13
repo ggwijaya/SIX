@@ -51,6 +51,16 @@ def client(tv=None):
     return app.test_client()
 
 
+def test_homepage_uses_hexinc_branding():
+    response = client().get("/")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "<title>HexInc</title>" in html
+    assert 'aria-label="HexInc home"' in html
+    assert '<span class="brand-mark">HEX</span>' in html
+    assert "<span><strong>Hex</strong>Inc</span>" in html
+
+
 def test_screener_api_shape():
     response = client().get("/api/screener?limit=200")
     body = response.get_json()
@@ -64,7 +74,9 @@ def test_screener_api_shape():
 def test_invalid_limit():
     response = client().get("/api/screener?limit=nope")
     assert response.status_code == 400
-    assert response.get_json()["error"]["code"] == "INVALID_LIMIT"
+    body = response.get_json()
+    assert body["source"] == "HexInc"
+    assert body["error"]["code"] == "INVALID_LIMIT"
 
 
 def test_upstream_outage_without_cache():

@@ -60,7 +60,7 @@ button { cursor: pointer; }
 }
 .brand strong { color: var(--teal); }
 .brand-mark {
-  width: 34px;
+  width: 42px;
   height: 34px;
   display: grid;
   place-items: center;

@@ -1,6 +1,6 @@
-# IDX Signal Desk
+# HexInc
 
-A no-key technical and liquidity screener for Indonesia Stock Exchange equities.
+HexInc is a no-key technical and liquidity screener for Indonesia Stock Exchange equities.
 
 ## Run locally
 

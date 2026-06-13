@@ -49,7 +49,7 @@ def create_app(
             jsonify(
                 {
                     "asOf": utc_now(),
-                    "source": "IDX Technical Screener",
+                    "source": "HexInc",
                     "stale": False,
                     "error": {
                         "code": code,
