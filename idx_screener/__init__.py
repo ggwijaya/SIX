@@ -1,0 +1,1 @@
+"""IDX Technical Screener package."""

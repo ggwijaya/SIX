@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Ranked technical and liquidity screener for Indonesia Stock Exchange equities.">
+  <title>IDX Signal Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="IDX Signal Desk home">
+      <span class="brand-mark">IX</span>
+      <span><strong>IDX</strong> Signal Desk</span>
+    </a>
+    <div class="market-status">
+      <span class="status-dot"></span>
+      <span id="freshnessLabel">Connecting to market data</span>
+    </div>
+    <button class="refresh-button" id="refreshButton" type="button">
+      <span class="refresh-icon">↻</span> Refresh data
+    </button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">INDONESIA EQUITY INTELLIGENCE</p>
+        <h1>Signal over <span>market noise.</span></h1>
+        <p class="hero-copy">A disciplined ranking of IDX stocks based on trend, momentum, risk, and real trading liquidity.</p>
+      </div>
+      <div class="method-pill">
+        <span>MODEL</span>
+        <strong>Technical 65%</strong>
+        <i></i>
+        <strong>Liquidity 35%</strong>
+      </div>
+    </section>
+
+    <section class="summary-grid" aria-label="Market summary">
+      <article class="metric-card skeleton-card">
+        <span>UNIVERSE SCREENED</span>
+        <strong id="universeMetric">—</strong>
+        <small>Primary IDX equities</small>
+      </article>
+      <article class="metric-card skeleton-card">
+        <span>LIQUID & ELIGIBLE</span>
+        <strong id="eligibleMetric">—</strong>
+        <small>≥ IDR 500M avg. value</small>
+      </article>
+      <article class="metric-card highlight skeleton-card">
+        <span>MEDIAN SCORE</span>
+        <strong id="medianMetric">—</strong>
+        <small>Across displayed results</small>
+      </article>
+      <article class="metric-card skeleton-card">
+        <span>LAST UPDATED</span>
+        <strong class="compact" id="updatedMetric">—</strong>
+        <small id="sourceMetric">Awaiting provider</small>
+      </article>
+    </section>
+
+    <section class="screener-shell">
+      <div class="screener-heading">
+        <div>
+          <p class="eyebrow">RANKED OPPORTUNITIES</p>
+          <h2>Technical screener</h2>
+        </div>
+        <div class="result-count"><strong id="resultCount">—</strong> matches</div>
+      </div>
+
+      <div class="alert hidden" id="statusAlert" role="status"></div>
+
+      <div class="filters" aria-label="Screener filters">
+        <label class="search-box">
+          <span>⌕</span>
+          <input id="searchInput" type="search" placeholder="Search ticker or company" autocomplete="off">
+        </label>
+        <label>
+          <span>Sector</span>
+          <select id="sectorFilter"><option value="">All sectors</option></select>
+        </label>
+        <label>
+          <span>Signal</span>
+          <select id="signalFilter">
+            <option value="">All signals</option>
+            <option>Strong</option>
+            <option>Constructive</option>
+            <option>Mixed</option>
+          </select>
+        </label>
+        <label>
+          <span>Min score <b id="scoreValue">0</b></span>
+          <input id="scoreFilter" type="range" min="0" max="90" value="0" step="5">
+        </label>
+        <label>
+          <span>RSI range</span>
+          <select id="rsiFilter">
+            <option value="">Any RSI</option>
+            <option value="30-50">30–50</option>
+            <option value="50-70">50–70</option>
+            <option value="70-100">70+</option>
+          </select>
+        </label>
+        <label>
+          <span>Min liquidity</span>
+          <select id="liquidityFilter">
+            <option value="500000000">IDR 500M</option>
+            <option value="1000000000">IDR 1B</option>
+            <option value="5000000000">IDR 5B</option>
+            <option value="10000000000">IDR 10B</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th data-sort="rank">#</th>
+              <th data-sort="symbol">Stock</th>
+              <th data-sort="sector">Sector</th>
+              <th data-sort="price" class="numeric">Price</th>
+              <th data-sort="change" class="numeric">Day</th>
+              <th data-sort="score" class="numeric active-sort">Score ↓</th>
+              <th data-sort="signal">Signal</th>
+              <th data-sort="rsi" class="numeric">RSI</th>
+              <th data-sort="relativeVolume" class="numeric">Rel. vol</th>
+              <th data-sort="averageTradedValue" class="numeric">Avg. value</th>
+            </tr>
+          </thead>
+          <tbody id="stockRows">
+            <tr class="loading-row"><td colspan="10"><div class="loading-line"></div><div class="loading-line short"></div></td></tr>
+            <tr class="loading-row"><td colspan="10"><div class="loading-line"></div><div class="loading-line short"></div></td></tr>
+            <tr class="loading-row"><td colspan="10"><div class="loading-line"></div><div class="loading-line short"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="disclaimer"><strong>Research tool, not financial advice.</strong> Scores are systematic indicators built from historical market data. They do not predict returns or account for your objectives and risk tolerance.</p>
+  </main>
+
+  <div class="drawer-backdrop hidden" id="drawerBackdrop"></div>
+  <aside class="drawer" id="detailDrawer" aria-hidden="true" aria-label="Stock details">
+    <button class="drawer-close" id="drawerClose" aria-label="Close stock details">×</button>
+    <div id="drawerContent"></div>
+  </aside>
+
+  <script src="/app.js"></script>
+</body>
+</html>
