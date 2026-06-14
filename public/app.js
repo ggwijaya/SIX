@@ -41,10 +41,21 @@ function updateSummary(data) {
     day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
   });
   $("#sourceMetric").textContent = data.source;
+  $("#modelLabel").textContent = data.model?.label || "Conservative v2";
+  const market = data.marketContext || {};
+  $("#regimeLabel").textContent = !market.available
+    ? "Unavailable"
+    : market.bullish
+      ? "Bullish regime"
+      : "Defensive regime";
+  $("#regimeLabel").classList.toggle("positive", Boolean(market.available && market.bullish));
+  $("#regimeLabel").classList.toggle("negative", Boolean(market.available && !market.bullish));
   $("#freshnessLabel").textContent = data.stale ? "Showing cached market data" : "Market data is current";
   $(".status-dot").classList.toggle("stale", data.stale);
   document.querySelectorAll(".skeleton-card").forEach((card) => card.classList.remove("skeleton-card"));
+  const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
   if (data.error) setAlert(data.error.message);
+  else if (warnings.length) setAlert(warnings.join(" "));
   else if (data.reducedCountReason) setAlert(data.reducedCountReason);
   else setAlert("");
 }
@@ -197,6 +208,10 @@ async function openDetail(symbol) {
 
 function renderDetail(stock, history, stale) {
   const latest = history[history.length - 1];
+  const relativeStrength = stock.relativeStrength || {};
+  const strongGate = stock.strongGate || {};
+  const gateChecks = strongGate.checks || {};
+  const deductions = stock.deductions || [];
   $("#drawerContent").innerHTML = `
     <p class="detail-symbol">IDX:${escapeHtml(stock.symbol)} ${stale ? "· CACHED" : ""}</p>
     <h2 class="detail-title">${escapeHtml(stock.company || stock.symbol)}</h2>
@@ -208,7 +223,7 @@ function renderDetail(stock, history, stale) {
     <section class="detail-section">
       <h3>Score composition · ${formatNumber(stock.score, 1)}/100</h3>
       <div class="breakdown">
-        ${Object.entries(stock.scoreBreakdown || {}).map(([key, value]) => `<div><span>${key.toUpperCase()}</span><strong>${formatNumber(value, 1)}</strong></div>`).join("")}
+        ${Object.entries(stock.scoreBreakdown || {}).map(([key, value]) => `<div class="${value < 0 ? "penalty-score" : ""}"><span>${key.replace(/([A-Z])/g, " $1").toUpperCase()}</span><strong>${formatNumber(value, 1)}</strong></div>`).join("")}
       </div>
     </section>
     <section class="detail-section">
@@ -216,11 +231,29 @@ function renderDetail(stock, history, stale) {
       <div class="indicator-grid">
         <div><span>RSI 14</span><strong>${formatNumber(stock.rsi, 1)}</strong></div>
         <div><span>REL. VOLUME</span><strong>${formatNumber(stock.relativeVolume, 2)}×</strong></div>
-        <div><span>VOLATILITY</span><strong>${formatNumber(stock.volatility, 2)}%</strong></div>
+        <div><span>ATR / PRICE</span><strong>${formatNumber(stock.atrPercent, 2)}%</strong></div>
+        <div><span>CHAIKIN MF</span><strong>${formatNumber(stock.cmf, 3)}</strong></div>
+        <div><span>TREND PERSISTENCE</span><strong>${formatNumber(stock.trendPersistence, 0)}/3</strong></div>
+        <div><span>VOLUME CONFIRMED</span><strong>${stock.volumeConfirmed ? "YES" : "NO"}</strong></div>
         <div><span>1 MONTH</span><strong>${formatNumber(stock.return1m, 1)}%</strong></div>
         <div><span>3 MONTH</span><strong>${formatNumber(stock.return3m, 1)}%</strong></div>
         <div><span>AVG. VALUE</span><strong>${formatIDR(stock.averageTradedValue)}</strong></div>
       </div>
+    </section>
+    <section class="detail-section">
+      <h3>Relative strength</h3>
+      <div class="indicator-grid">
+        <div><span>VS IHSG 1M</span><strong>${formatSignedPercent(relativeStrength.market1m)}</strong></div>
+        <div><span>VS IHSG 3M</span><strong>${formatSignedPercent(relativeStrength.market3m)}</strong></div>
+        <div><span>VS SECTOR 1M</span><strong>${formatSignedPercent(relativeStrength.sector1m)}</strong></div>
+        <div><span>VS SECTOR 3M</span><strong>${formatSignedPercent(relativeStrength.sector3m)}</strong></div>
+        <div><span>SECTOR SAMPLE</span><strong>${formatNumber(relativeStrength.sectorSize, 0)}</strong></div>
+        <div><span>BENCHMARK VALID</span><strong>${relativeStrength.sectorEligible ? "YES" : "NO"}</strong></div>
+      </div>
+    </section>
+    <section class="detail-section">
+      <h3>Strong gate · ${strongGate.passed ? "PASSED" : "NOT PASSED"}</h3>
+      <div class="tag-list">${Object.entries(gateChecks).map(([key, passed]) => `<span class="tag ${passed ? "" : "risk"}">${passed ? "PASS" : "FAIL"} · ${escapeHtml(humanizeKey(key))}</span>`).join("")}</div>
     </section>
     <section class="detail-section">
       <h3>Positive signals</h3>
@@ -229,8 +262,24 @@ function renderDetail(stock, history, stale) {
     <section class="detail-section">
       <h3>Risk flags</h3>
       <div class="tag-list">${(stock.riskFlags?.length ? stock.riskFlags : ["No major technical risk flags"]).map((tag) => `<span class="tag risk">${escapeHtml(tag)}</span>`).join("")}</div>
+    </section>
+    <section class="detail-section">
+      <h3>Deductions</h3>
+      <div class="deduction-list">${deductions.length
+        ? deductions.map((item) => `<div><span>${escapeHtml(item.label)}</span><strong>-${formatNumber(item.points, 1)}</strong></div>`).join("")
+        : "<p class=\"sector\">No score deductions.</p>"}
+      </div>
     </section>`;
   drawChart(history);
+}
+
+function humanizeKey(value) {
+  return String(value).replace(/([A-Z])/g, " $1").replace(/^./, (character) => character.toUpperCase());
+}
+
+function formatSignedPercent(value) {
+  if (value == null) return "—";
+  return `${value > 0 ? "+" : ""}${formatNumber(value, 1)}%`;
 }
 
 function drawChart(history) {

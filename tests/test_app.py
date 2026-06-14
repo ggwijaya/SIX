@@ -11,31 +11,69 @@ def stock(symbol="BBCA"):
         "price": 9000,
         "change": 1.2,
         "volume": 10_000_000,
+        "volumePrev1": 9_000_000,
+        "volumePrev2": 8_000_000,
         "averageVolume10d": 8_000_000,
         "relativeVolume": 1.2,
+        "relativeVolumePrev1": 1.1,
+        "relativeVolumePrev2": 1.0,
         "marketCap": 1_000_000_000_000,
         "rsi": 58,
+        "rsiPrev1": 56,
+        "rsiPrev2": 54,
         "macd": 10,
+        "macdPrev1": 8,
+        "macdPrev2": 6,
         "macdSignal": 8,
+        "macdSignalPrev1": 7,
+        "macdSignalPrev2": 5,
         "ema20": 8800,
+        "ema20Prev1": 8700,
+        "ema20Prev2": 8600,
         "ema50": 8500,
+        "ema50Prev1": 8400,
+        "ema50Prev2": 8300,
         "ema200": 8000,
+        "ema200Prev1": 7900,
+        "ema200Prev2": 7800,
+        "pricePrev1": 8900,
+        "pricePrev2": 8800,
         "return1m": 4,
         "return3m": 12,
-        "volatility": 2,
+        "atr": 200,
+        "atrPrev1": 195,
+        "atrPrev2": 190,
+        "cmf": 0.2,
+        "cmfPrev1": 0.15,
+        "cmfPrev2": 0.1,
     }
 
 
 class FakeTradingView:
     source_name = "Fixture TradingView"
 
-    def __init__(self, fails=False):
+    def __init__(self, fails=False, market_fails=False):
         self.fails = fails
+        self.market_fails = market_fails
 
     def fetch_stocks(self):
         if self.fails:
             raise ProviderError("fixture outage")
         return [stock()]
+
+    def fetch_market_context(self):
+        if self.market_fails:
+            raise ProviderError("fixture benchmark outage")
+        return {
+            "symbol": "COMPOSITE",
+            "name": "IDX Composite Index",
+            "price": 8000,
+            "ema200": 7500,
+            "return1m": 2,
+            "return3m": 5,
+            "available": True,
+            "bullish": True,
+        }
 
 
 class FakeYahoo:
@@ -68,6 +106,9 @@ def test_screener_api_shape():
     assert body["source"] == "Fixture TradingView"
     assert body["returnedCount"] == 1
     assert body["stocks"][0]["symbol"] == "BBCA"
+    assert body["model"]["version"] == "2.0"
+    assert body["marketContext"]["bullish"] is True
+    assert body["warnings"] == []
     assert "s-maxage=900" in response.headers["Cache-Control"]
 
 
@@ -83,6 +124,16 @@ def test_upstream_outage_without_cache():
     response = client(FakeTradingView(fails=True)).get("/api/screener")
     assert response.status_code == 503
     assert response.get_json()["error"]["code"] == "UPSTREAM_UNAVAILABLE"
+
+
+def test_market_context_outage_warns_and_suppresses_strong():
+    response = client(FakeTradingView(market_fails=True)).get("/api/screener")
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["marketContext"]["available"] is False
+    assert body["warnings"]
+    assert body["stocks"][0]["signal"] != "Strong"
+    assert body["stocks"][0]["strongGate"]["checks"]["marketBullish"] is False
 
 
 def test_refresh_is_rate_limited():
