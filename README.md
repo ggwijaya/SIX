@@ -13,12 +13,6 @@ Open `http://127.0.0.1:5000`.
 
 The app uses TradingView's public Indonesia scanner and Yahoo Finance's chart endpoint. Both are unofficial interfaces and can change. Screener results are cached for 15 minutes; stock histories are cached for one hour. See [METHODOLOGY.md](METHODOLOGY.md) for the complete model rules and limitations.
 
-## Test
-
-```powershell
-python -m pytest -q
-```
-
 ## Backtest
 
 Run a survivorship-biased smoke comparison using the most liquid stocks in the current TradingView universe:
@@ -36,19 +30,6 @@ python backtest.py --universe-csv data/universe.csv --prices-dir data/prices
 ```
 
 `universe.csv` must contain `symbol,sector,start_date,end_date`. Each price file must contain `date,open,high,low,close,adj_close,volume`, and the directory must include `^JKSE.csv`, `JKSE.csv`, or `COMPOSITE.csv`.
-
-## Deploy to Vercel
-
-1. Push this directory to a GitHub repository.
-2. Sign in to Vercel and choose **Add New > Project**.
-3. Import the GitHub repository.
-4. Leave the framework and build settings on their detected defaults.
-5. Select the Hobby plan and deploy.
-6. Confirm `/api/health` returns `{"status": "ok"}` and open the generated `vercel.app` URL.
-
-Vercel detects the root `app.py` as a Flask application. `vercel.json` places the Python function in Singapore, while files under `public/` are served through Vercel's CDN.
-
-Screener responses are cached at the CDN for 15 minutes and stock histories for one hour. The in-process cache and one-minute refresh limiter are best-effort because separate serverless instances do not share memory.
 
 ## Score
 
