@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from idx_screener.providers import TradingViewProvider, YahooProvider
 
 
@@ -11,27 +13,27 @@ class FixtureResponse:
 
 def test_tradingview_fixture_maps_columns(monkeypatch):
     provider = TradingViewProvider()
-    values = [
-        "BBCA",
-        "PT Bank Central Asia Tbk",
-        "stock",
-        "Finance",
-        5925,
-        1.7,
-        415_872_300,
-        602_213_060,
-        0.71,
-        730_404_652_734_375,
-        52.3,
-        -179.2,
-        -216.9,
-        5728.2,
-        6116.9,
-        7277.4,
-        -3.2,
-        -13.5,
-        4.66,
-    ]
+    raw = {column: index + 1 for index, column in enumerate(provider.columns)}
+    raw.update(
+        {
+            "name": "BBCA",
+            "description": "PT Bank Central Asia Tbk",
+            "type": "stock",
+            "sector": "Finance",
+            "close": 5925,
+            "close[1]": 5825,
+            "close[2]": 5800,
+            "average_volume_10d_calc": 602_213_060,
+            "RSI[5]": 44,
+            "Stoch.K": 35,
+            "Stoch.K[5]": 15,
+            "Stoch.D": 28,
+            "EMA200": 5277.4,
+            "ATR": 125,
+            "ChaikinMoneyFlow": 0.12,
+        }
+    )
+    values = [raw[column] for column in provider.columns]
     monkeypatch.setattr(
         provider,
         "_request",
@@ -42,7 +44,49 @@ def test_tradingview_fixture_maps_columns(monkeypatch):
     result = provider.fetch_stocks()
     assert result[0]["symbol"] == "BBCA"
     assert result[0]["averageVolume10d"] == 602_213_060
-    assert result[0]["ema200"] == 7277.4
+    assert result[0]["pricePrev2"] == 5800
+    assert result[0]["ema200"] == 5277.4
+    assert result[0]["atr"] == 125
+    assert result[0]["cmf"] == 0.12
+    assert result[0]["rsiPrev5"] == 44
+    assert result[0]["stochasticK"] == 35
+    assert result[0]["stochasticKPrev5"] == 15
+    assert result[0]["stochasticD"] == 28
+
+
+def test_market_context_maps_regime(monkeypatch):
+    provider = TradingViewProvider()
+    raw = {
+        "name": "COMPOSITE",
+        "description": "IDX Composite Index",
+        "close": 8000,
+        "close[1]": 7950,
+        "close[2]": 7900,
+        "EMA200": 7500,
+        "EMA200[1]": 7490,
+        "EMA200[2]": 7480,
+        "Perf.1M": 4,
+        "Perf.3M": 10,
+    }
+    monkeypatch.setattr(
+        provider,
+        "_request",
+        lambda *args, **kwargs: FixtureResponse(
+            {
+                "totalCount": 1,
+                "data": [
+                    {
+                        "s": "IDX:COMPOSITE",
+                        "d": [raw[column] for column in provider.market_columns],
+                    }
+                ],
+            }
+        ),
+    )
+    context = provider.fetch_market_context()
+    assert context["available"] is True
+    assert context["bullish"] is True
+    assert context["return3m"] == 10
 
 
 def test_yahoo_fixture_skips_missing_close(monkeypatch):
@@ -76,3 +120,55 @@ def test_yahoo_fixture_skips_missing_close(monkeypatch):
     result = provider.fetch_history("bbca.jk")
     assert len(result) == 1
     assert result[0]["close"] == 9050
+    assert result[0]["adjustedClose"] == 9050
+
+
+def test_yahoo_enriches_only_current_recovery_candidates(monkeypatch):
+    provider = YahooProvider()
+    start = date(2026, 1, 1)
+    history = []
+    price = 100.0
+    for index in range(90):
+        price += 1 if index % 4 else -0.3
+        history.append(
+            {
+                "date": (start + timedelta(days=index)).isoformat(),
+                "open": price - 0.5,
+                "high": price + 1,
+                "low": price - 1,
+                "close": price,
+                "adjustedClose": price,
+                "volume": 1_000_000,
+            }
+        )
+    monkeypatch.setattr(
+        provider,
+        "_fetch_history",
+        lambda normalized, range_value: history,
+    )
+    candidate = {
+        "symbol": "TEST",
+        "sector": "Finance",
+        "price": 100,
+        "averageVolume10d": 10_000_000,
+        "ema200": 80,
+        "cmf": 0.2,
+        "rsi": 40,
+        "stochasticK": 30,
+        "stochasticD": 25,
+    }
+    rejected = {
+        **candidate,
+        "symbol": "NOPE",
+        "cmf": -0.2,
+    }
+
+    enriched, failures = provider.enrich_reversal_history(
+        [candidate, rejected],
+        {"available": True, "bullish": True},
+    )
+
+    assert failures == []
+    assert enriched[0]["rsiPrev3"] is not None
+    assert enriched[0]["stochasticKPrev5"] is not None
+    assert "rsiPrev3" not in enriched[1]

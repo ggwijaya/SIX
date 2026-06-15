@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Ranked technical and liquidity screener for Indonesia Stock Exchange equities.">
-  <title>IDX Signal Desk</title>
+  <meta name="description" content="HexInc ranks Indonesia Stock Exchange equities by technical strength and trading liquidity.">
+  <title>HexInc</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -14,9 +14,9 @@
   <div class="ambient ambient-one"></div>
   <div class="ambient ambient-two"></div>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="IDX Signal Desk home">
-      <span class="brand-mark">IX</span>
-      <span><strong>IDX</strong> Signal Desk</span>
+    <a class="brand" href="/" aria-label="HexInc home">
+      <span class="brand-mark">HEX</span>
+      <span><strong>Hex</strong>Inc</span>
     </a>
     <div class="market-status">
       <span class="status-dot"></span>
@@ -36,9 +36,10 @@
       </div>
       <div class="method-pill">
         <span>MODEL</span>
-        <strong>Technical 65%</strong>
+        <strong id="modelLabel">Conservative v2</strong>
         <i></i>
-        <strong>Liquidity 35%</strong>
+        <span>IHSG</span>
+        <strong id="regimeLabel">Checking regime</strong>
       </div>
     </section>
 
@@ -95,6 +96,14 @@
           </select>
         </label>
         <label>
+          <span>Setup</span>
+          <select id="setupFilter">
+            <option value="">All setups</option>
+            <option>Recovery Confirmed</option>
+            <option>Oversold Watch</option>
+          </select>
+        </label>
+        <label>
           <span>Min score <b id="scoreValue">0</b></span>
           <input id="scoreFilter" type="range" min="0" max="90" value="0" step="5">
         </label>
@@ -129,15 +138,16 @@
               <th data-sort="change" class="numeric">Day</th>
               <th data-sort="score" class="numeric active-sort">Score ↓</th>
               <th data-sort="signal">Signal</th>
+              <th class="no-sort">Setup</th>
               <th data-sort="rsi" class="numeric">RSI</th>
               <th data-sort="relativeVolume" class="numeric">Rel. vol</th>
               <th data-sort="averageTradedValue" class="numeric">Avg. value</th>
             </tr>
           </thead>
           <tbody id="stockRows">
-            <tr class="loading-row"><td colspan="10"><div class="loading-line"></div><div class="loading-line short"></div></td></tr>
-            <tr class="loading-row"><td colspan="10"><div class="loading-line"></div><div class="loading-line short"></div></td></tr>
-            <tr class="loading-row"><td colspan="10"><div class="loading-line"></div><div class="loading-line short"></div></td></tr>
+            <tr class="loading-row"><td colspan="11"><div class="loading-line"></div><div class="loading-line short"></div></td></tr>
+            <tr class="loading-row"><td colspan="11"><div class="loading-line"></div><div class="loading-line short"></div></td></tr>
+            <tr class="loading-row"><td colspan="11"><div class="loading-line"></div><div class="loading-line short"></div></td></tr>
           </tbody>
         </table>
       </div>

@@ -11,7 +11,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from idx_screener.cache import TTLCache
 from idx_screener.providers import ProviderError, TradingViewProvider, YahooProvider
-from idx_screener.scoring import rank_stocks
+from idx_screener.scoring import MODEL, rank_stocks
 
 
 def utc_now() -> str:
@@ -49,7 +49,7 @@ def create_app(
             jsonify(
                 {
                     "asOf": utc_now(),
-                    "source": "IDX Technical Screener",
+                    "source": "HexInc",
                     "stale": False,
                     "error": {
                         "code": code,
@@ -68,12 +68,55 @@ def create_app(
 
         try:
             raw_stocks = tv_provider.fetch_stocks()
-            ranked, counts = rank_stocks(raw_stocks)
+            warnings = []
+            try:
+                market_context = tv_provider.fetch_market_context()
+            except (AttributeError, ProviderError) as exc:
+                market_context = {
+                    "symbol": "COMPOSITE",
+                    "name": "IDX Composite Index",
+                    "available": False,
+                    "bullish": False,
+                    "return1m": None,
+                    "return3m": None,
+                }
+                warnings.append(
+                    f"IHSG context is unavailable; Strong signals are suppressed. {exc}"
+                )
+            if not market_context.get("available"):
+                warnings.append(
+                    "IHSG context is incomplete; Strong signals are suppressed."
+                )
+            try:
+                enrich_reversal = getattr(
+                    yahoo_provider, "enrich_reversal_history"
+                )
+            except AttributeError:
+                enrich_reversal = None
+            if enrich_reversal:
+                try:
+                    raw_stocks, setup_history_failures = enrich_reversal(
+                        raw_stocks, market_context
+                    )
+                    if setup_history_failures:
+                        warnings.append(
+                            "Oversold recovery history is unavailable for "
+                            f"{len(setup_history_failures)} candidate stock(s)."
+                        )
+                except ProviderError as exc:
+                    warnings.append(
+                        "Oversold recovery history is unavailable for some "
+                        f"stocks. {exc}"
+                    )
+            ranked, counts = rank_stocks(raw_stocks, market_context)
             snapshot = {
                 "asOf": utc_now(),
                 "source": tv_provider.source_name,
                 "stale": False,
                 "error": None,
+                "model": MODEL,
+                "marketContext": market_context,
+                "warnings": list(dict.fromkeys(warnings)),
                 "universeCount": counts["universe"],
                 "qualifyingCount": counts["qualifying"],
                 "excludedCount": counts["excluded"],
