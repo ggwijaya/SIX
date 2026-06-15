@@ -21,6 +21,16 @@ def stock(symbol="BBCA"):
         "rsi": 58,
         "rsiPrev1": 56,
         "rsiPrev2": 54,
+        "rsiPrev3": 52,
+        "rsiPrev4": 50,
+        "rsiPrev5": 48,
+        "stochasticK": 65,
+        "stochasticKPrev1": 60,
+        "stochasticKPrev2": 55,
+        "stochasticKPrev3": 50,
+        "stochasticKPrev4": 45,
+        "stochasticKPrev5": 40,
+        "stochasticD": 60,
         "macd": 10,
         "macdPrev1": 8,
         "macdPrev2": 6,
@@ -106,9 +116,10 @@ def test_screener_api_shape():
     assert body["source"] == "Fixture TradingView"
     assert body["returnedCount"] == 1
     assert body["stocks"][0]["symbol"] == "BBCA"
-    assert body["model"]["version"] == "2.0"
+    assert body["model"]["version"] == "2.1"
     assert body["marketContext"]["bullish"] is True
     assert body["warnings"] == []
+    assert body["stocks"][0]["reversalSetup"]["status"] == "None"
     assert "s-maxage=900" in response.headers["Cache-Control"]
 
 

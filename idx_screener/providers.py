@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+
+from idx_screener.indicators import build_feature_rows
 
 
 class ProviderError(RuntimeError):
@@ -60,6 +63,16 @@ class TradingViewProvider(BaseProvider):
         "RSI",
         "RSI[1]",
         "RSI[2]",
+        "RSI[3]",
+        "RSI[4]",
+        "RSI[5]",
+        "Stoch.K",
+        "Stoch.K[1]",
+        "Stoch.K[2]",
+        "Stoch.K[3]",
+        "Stoch.K[4]",
+        "Stoch.K[5]",
+        "Stoch.D",
         "MACD.macd",
         "MACD.macd[1]",
         "MACD.macd[2]",
@@ -150,6 +163,16 @@ class TradingViewProvider(BaseProvider):
                     "rsi": raw.get("RSI"),
                     "rsiPrev1": raw.get("RSI[1]"),
                     "rsiPrev2": raw.get("RSI[2]"),
+                    "rsiPrev3": raw.get("RSI[3]"),
+                    "rsiPrev4": raw.get("RSI[4]"),
+                    "rsiPrev5": raw.get("RSI[5]"),
+                    "stochasticK": raw.get("Stoch.K"),
+                    "stochasticKPrev1": raw.get("Stoch.K[1]"),
+                    "stochasticKPrev2": raw.get("Stoch.K[2]"),
+                    "stochasticKPrev3": raw.get("Stoch.K[3]"),
+                    "stochasticKPrev4": raw.get("Stoch.K[4]"),
+                    "stochasticKPrev5": raw.get("Stoch.K[5]"),
+                    "stochasticD": raw.get("Stoch.D"),
                     "macd": raw.get("MACD.macd"),
                     "macdPrev1": raw.get("MACD.macd[1]"),
                     "macdPrev2": raw.get("MACD.macd[2]"),
@@ -239,12 +262,17 @@ class YahooProvider(BaseProvider):
         normalized = self.normalize_symbol(symbol)
         if not normalized:
             raise ProviderError("Invalid IDX stock symbol.")
+        return self._fetch_history(normalized, "1y")
+
+    def _fetch_history(
+        self, normalized: str, range_value: str
+    ) -> List[Dict[str, Any]]:
         url = self.endpoint.format(symbol=normalized)
         response = self._request(
             "GET",
             url,
             params={
-                "range": "1y",
+                "range": range_value,
                 "interval": "1d",
                 "events": "div,splits",
                 "includeAdjustedClose": "true",
@@ -282,6 +310,84 @@ class YahooProvider(BaseProvider):
         if not history:
             raise ProviderError(f"No historical data found for {normalized}.")
         return history
+
+    def enrich_reversal_history(
+        self,
+        stocks: List[Dict[str, Any]],
+        market_context: Dict[str, Any],
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        enriched = [dict(stock) for stock in stocks]
+        if not market_context.get("available") or not market_context.get("bullish"):
+            return enriched, []
+
+        candidates: List[Dict[str, Any]] = []
+        for stock in enriched:
+            price = self._number(stock.get("price"))
+            average_volume = self._number(stock.get("averageVolume10d"))
+            ema200 = self._number(stock.get("ema200"))
+            cmf = self._number(stock.get("cmf"))
+            rsi = self._number(stock.get("rsi"))
+            stochastic_k = self._number(stock.get("stochasticK"))
+            stochastic_d = self._number(stock.get("stochasticD"))
+            average_value = (
+                price * average_volume
+                if price is not None and average_volume is not None
+                else None
+            )
+            if (
+                average_value is not None
+                and average_value >= 500_000_000
+                and price is not None
+                and ema200 is not None
+                and price > ema200
+                and cmf is not None
+                and cmf > 0
+                and rsi is not None
+                and rsi > 30
+                and stochastic_k is not None
+                and stochastic_k > 20
+                and stochastic_d is not None
+                and stochastic_k > stochastic_d
+            ):
+                candidates.append(stock)
+
+        failures: List[str] = []
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {
+                executor.submit(
+                    self._fetch_history, str(stock["symbol"]), "3mo"
+                ): stock
+                for stock in candidates
+            }
+            for future in as_completed(futures):
+                stock = futures[future]
+                try:
+                    rows = build_feature_rows(
+                        future.result(),
+                        str(stock["symbol"]),
+                        str(stock.get("sector") or "Unclassified"),
+                    )
+                    if not rows:
+                        raise ProviderError("No reconstructed setup history.")
+                    latest = rows[-1]
+                    for offset in range(3, 6):
+                        stock[f"rsiPrev{offset}"] = latest.get(
+                            f"rsiPrev{offset}"
+                        )
+                        stock[f"stochasticKPrev{offset}"] = latest.get(
+                            f"stochasticKPrev{offset}"
+                        )
+                except (ProviderError, requests.RequestException, ValueError):
+                    failures.append(str(stock.get("symbol") or "Unknown"))
+        return enriched, sorted(failures)
+
+    @staticmethod
+    def _number(value: Any) -> Optional[float]:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number == number else None
 
     @staticmethod
     def _at(values: Optional[List[Any]], index: int) -> Any:

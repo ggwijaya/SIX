@@ -1,4 +1,5 @@
 from idx_screener.scoring import (
+    build_reversal_setup,
     build_sector_context,
     eligible,
     rank_stocks,
@@ -24,6 +25,16 @@ def stock(symbol="TEST", **overrides):
         "rsi": 58,
         "rsiPrev1": 56,
         "rsiPrev2": 54,
+        "rsiPrev3": 52,
+        "rsiPrev4": 50,
+        "rsiPrev5": 48,
+        "stochasticK": 65,
+        "stochasticKPrev1": 60,
+        "stochasticKPrev2": 55,
+        "stochasticKPrev3": 50,
+        "stochasticKPrev4": 45,
+        "stochasticKPrev5": 40,
+        "stochasticD": 60,
         "macd": 12,
         "macdPrev1": 10,
         "macdPrev2": 8,
@@ -216,3 +227,112 @@ def test_explicit_risk_deductions_are_capped_at_zero():
     assert sum(result["scoreBreakdown"].values()) == result["score"]
     codes = {item["code"] for item in result["deductions"]}
     assert {"BELOW_EMA200", "RSI_EXTREME", "ATR_EXTREME"} <= codes
+
+
+def bullish_market():
+    return {
+        "available": True,
+        "bullish": True,
+        "return1m": 2,
+        "return3m": 5,
+    }
+
+
+def recovery_stock(**overrides):
+    values = {
+        "rsi": 40,
+        "rsiPrev1": 29,
+        "stochasticK": 30,
+        "stochasticKPrev1": 15,
+        "stochasticD": 25,
+    }
+    values.update(overrides)
+    return stock(**values)
+
+
+def test_active_oversold_setup_is_watch():
+    setup = build_reversal_setup(
+        stock(rsi=28, stochasticK=15, stochasticD=18),
+        bullish_market(),
+    )
+    assert setup["status"] == "Oversold Watch"
+    assert setup["checks"]["currentOversold"] is True
+
+
+def test_recovery_is_confirmed_after_recent_oversold():
+    setup = build_reversal_setup(recovery_stock(), bullish_market())
+    assert setup["status"] == "Recovery Confirmed"
+    assert setup["lookback"]["mostRecentOversoldSessionsAgo"] == 1
+    assert all(
+        setup["checks"][key]
+        for key in [
+            "priorOversold",
+            "rsiRecovered",
+            "stochasticRecovered",
+            "stochasticAboveD",
+            "priceAboveEma200",
+            "cmfPositive",
+            "marketBullish",
+        ]
+    )
+
+
+def test_expired_oversold_lookback_does_not_confirm_recovery():
+    setup = build_reversal_setup(
+        stock(
+            rsi=40,
+            stochasticK=30,
+            stochasticD=25,
+            rsiPrev6=25,
+            stochasticKPrev6=10,
+        ),
+        bullish_market(),
+    )
+    assert setup["status"] == "None"
+    assert setup["checks"]["priorOversold"] is False
+
+
+def test_recovery_fails_closed_for_regime_trend_and_money_flow():
+    bearish = build_reversal_setup(
+        recovery_stock(),
+        {**bullish_market(), "bullish": False},
+    )
+    below_ema200 = build_reversal_setup(
+        recovery_stock(price=700, ema200=800),
+        bullish_market(),
+    )
+    negative_cmf = build_reversal_setup(
+        recovery_stock(cmf=-0.1),
+        bullish_market(),
+    )
+    assert bearish["status"] == "None"
+    assert bearish["checks"]["marketBullish"] is False
+    assert below_ema200["status"] == "None"
+    assert below_ema200["checks"]["priceAboveEma200"] is False
+    assert negative_cmf["status"] == "None"
+    assert negative_cmf["checks"]["cmfPositive"] is False
+
+
+def test_missing_reversal_data_is_unavailable():
+    setup = build_reversal_setup(
+        recovery_stock(stochasticD=None),
+        bullish_market(),
+    )
+    assert setup["status"] == "Unavailable"
+    assert setup["available"] is False
+
+
+def test_reversal_setup_does_not_change_score_signal_or_rank():
+    enriched = stock("AAA")
+    unavailable = {
+        key: value
+        for key, value in stock("AAA").items()
+        if not key.startswith("stochastic") and key not in {"rsiPrev3", "rsiPrev4", "rsiPrev5"}
+    }
+    enriched_ranked, _ = rank_stocks([enriched], bullish_market())
+    unavailable_ranked, _ = rank_stocks([unavailable], bullish_market())
+    assert enriched_ranked[0]["score"] == unavailable_ranked[0]["score"]
+    assert enriched_ranked[0]["signal"] == unavailable_ranked[0]["signal"]
+    assert enriched_ranked[0]["rank"] == unavailable_ranked[0]["rank"]
+    assert enriched_ranked[0]["reversalSetup"]["status"] == "None"
+    assert unavailable_ranked[0]["reversalSetup"]["status"] == "Unavailable"

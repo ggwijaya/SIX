@@ -1,4 +1,4 @@
-# HexInc Conservative Signal Model v2
+# HexInc Conservative Signal Model v2.1
 
 HexInc ranks eligible Indonesia Stock Exchange equities using end-of-session technical, liquidity, market-regime, and relative-strength data. It is a research screener, not a return forecast or trading instruction.
 
@@ -66,13 +66,22 @@ All of the following are required:
 
 All other stocks are Mixed. Missing required data fails closed rather than being interpreted as neutral.
 
+## Oversold Recovery Timing
+
+The oversold recovery setup is an entry-timing diagnostic. It does not change the score, rank, deductions, or Strong and Constructive signal rules.
+
+- `Oversold Watch`: current RSI14 is no higher than 30 and Stochastic `%K` is below 20.
+- `Recovery Confirmed`: RSI14 and `%K` were simultaneously oversold during one of the prior five sessions; current RSI14 is above 30; current `%K` is above 20 and `%D`; price is above EMA200; Chaikin Money Flow is positive; and IHSG is above EMA200.
+- `None`: complete setup data is available, but neither setup is active.
+- `Unavailable`: required stock or IHSG inputs are missing. Missing data never confirms recovery.
+
 ## Market Context
 
 The live screener requests IDX Composite data separately from the stock universe. If that request fails, ranking continues with a warning, the market regime is marked unavailable, and Strong signals are suppressed.
 
 ## Backtesting
 
-The local backtester reconstructs indicators chronologically from adjusted OHLCV data and evaluates only transitions into Strong. It compares legacy v1 and conservative v2.
+The local backtester reconstructs indicators chronologically from adjusted OHLCV data and evaluates only transitions into Strong. It compares legacy v1 and conservative v2.1. Oversold recovery transitions are reported separately so they do not alter the model comparison.
 
 A false signal is a new Strong event whose adjusted 20-session stock return, after 0.5% total costs, does not beat the matching IDX Composite return.
 
@@ -84,6 +93,7 @@ Reports include:
 - Mean adverse excursion
 - Event and labeled-event counts
 - Breakdowns by year, market regime, and sector
+- Separate oversold recovery timing metrics and events
 - Coverage, missing histories, adjustment usage, and bias warnings
 
 The default Yahoo smoke mode uses today's listed universe and is survivorship-biased. Its report explicitly sets `validationClaim` to false. A credible validation requires historical membership dates and delisted-stock prices through the CSV import interface.
@@ -91,3 +101,5 @@ The default Yahoo smoke mode uses today's listed universe and is survivorship-bi
 ## Data Limitations
 
 TradingView and Yahoo endpoints are unofficial and can change. Provider calculations may differ slightly from locally reconstructed indicators because of session calendars, adjustment conventions, and initialization rules. Scores should be validated periodically and should not be treated as financial advice.
+
+TradingView supplies the current and first two lagged RSI/Stochastic observations. During bullish IHSG regimes, only liquid stocks that pass every current recovery check are selectively enriched with Yahoo OHLCV to reconstruct sessions three through five. Failed enrichment leaves those candidates `Unavailable`.

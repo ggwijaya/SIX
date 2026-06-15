@@ -129,6 +129,35 @@ def rolling_average(
     return result
 
 
+def stochastic(
+    bars: List[Dict[str, Any]],
+    period: int = 14,
+    k_smoothing: int = 3,
+    d_smoothing: int = 3,
+) -> tuple[List[Optional[float]], List[Optional[float]]]:
+    raw_k: List[Optional[float]] = [None] * len(bars)
+    for index in range(period - 1, len(bars)):
+        close = finite(bars[index].get("close"))
+        highs = [
+            finite(bar.get("high")) for bar in bars[index - period + 1 : index + 1]
+        ]
+        lows = [
+            finite(bar.get("low")) for bar in bars[index - period + 1 : index + 1]
+        ]
+        if close is None or any(value is None for value in highs + lows):
+            continue
+        highest = max(value for value in highs if value is not None)
+        lowest = min(value for value in lows if value is not None)
+        raw_k[index] = (
+            50.0
+            if highest == lowest
+            else (close - lowest) / (highest - lowest) * 100
+        )
+    stochastic_k = rolling_average(raw_k, k_smoothing)
+    stochastic_d = rolling_average(stochastic_k, d_smoothing)
+    return stochastic_k, stochastic_d
+
+
 def rolling_volatility(
     values: List[Optional[float]], period: int = 20
 ) -> List[Optional[float]]:
@@ -206,6 +235,7 @@ def build_feature_rows(
     macd_signal = ema(macd, 9)
     atr14 = atr(ordered)
     cmf20 = chaikin_money_flow(ordered)
+    stochastic_k, stochastic_d = stochastic(ordered)
     average_volume10 = rolling_average(volumes, 10)
     volatility = rolling_volatility(closes)
 
@@ -225,6 +255,9 @@ def build_feature_rows(
             if index < offset or price is None or closes[index - offset] in (None, 0):
                 return None
             return (price / closes[index - offset] - 1) * 100  # type: ignore[operator]
+
+        def lag(values: List[Optional[float]], offset: int) -> Optional[float]:
+            return values[index - offset] if index >= offset else None
 
         rows.append(
             {
@@ -255,8 +288,18 @@ def build_feature_rows(
                     else None
                 ),
                 "rsi": rsi14[index],
-                "rsiPrev1": rsi14[index - 1],
-                "rsiPrev2": rsi14[index - 2],
+                "rsiPrev1": lag(rsi14, 1),
+                "rsiPrev2": lag(rsi14, 2),
+                "rsiPrev3": lag(rsi14, 3),
+                "rsiPrev4": lag(rsi14, 4),
+                "rsiPrev5": lag(rsi14, 5),
+                "stochasticK": stochastic_k[index],
+                "stochasticKPrev1": lag(stochastic_k, 1),
+                "stochasticKPrev2": lag(stochastic_k, 2),
+                "stochasticKPrev3": lag(stochastic_k, 3),
+                "stochasticKPrev4": lag(stochastic_k, 4),
+                "stochasticKPrev5": lag(stochastic_k, 5),
+                "stochasticD": stochastic_d[index],
                 "macd": macd[index],
                 "macdPrev1": macd[index - 1],
                 "macdPrev2": macd[index - 2],

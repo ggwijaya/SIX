@@ -34,6 +34,8 @@ def test_feature_rows_do_not_change_when_future_data_is_appended():
     assert first[-1]["ema200"] is not None
     assert first[-1]["cmf"] is not None
     assert first[-1]["atr"] is not None
+    assert first[-1]["stochasticK"] is not None
+    assert first[-1]["stochasticD"] is not None
 
 
 def test_universe_membership_dates_are_inclusive():
@@ -125,6 +127,7 @@ def test_backtest_deduplicates_continuous_strong_events(monkeypatch):
                     "averageTradedValue": 1_000_000_000,
                     "score": 90,
                     "signal": "Strong",
+                    "reversalSetup": {"status": "Recovery Confirmed"},
                 }
                 for item in daily
             ],
@@ -145,6 +148,7 @@ def test_backtest_deduplicates_continuous_strong_events(monkeypatch):
     )
     assert report["models"]["v1"]["metrics"]["eventCount"] == 1
     assert report["models"]["v2"]["metrics"]["eventCount"] == 1
+    assert report["recoverySetup"]["metrics"]["eventCount"] == 1
     event = report["models"]["v2"]["events"][0]
     assert event["exitDate"]
     assert event["falseSignal"] is False
@@ -162,4 +166,5 @@ def test_report_schema_handles_no_signals():
     assert set(report["models"]) == {"v1", "v2"}
     assert "coverage" in report
     assert "falseSignalDefinition" in report
+    assert "recoverySetup" in report
     assert report["models"]["v2"]["metrics"]["eventCount"] >= 0

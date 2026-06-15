@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from idx_screener.providers import TradingViewProvider, YahooProvider
 
 
@@ -22,6 +24,10 @@ def test_tradingview_fixture_maps_columns(monkeypatch):
             "close[1]": 5825,
             "close[2]": 5800,
             "average_volume_10d_calc": 602_213_060,
+            "RSI[5]": 44,
+            "Stoch.K": 35,
+            "Stoch.K[5]": 15,
+            "Stoch.D": 28,
             "EMA200": 5277.4,
             "ATR": 125,
             "ChaikinMoneyFlow": 0.12,
@@ -42,6 +48,10 @@ def test_tradingview_fixture_maps_columns(monkeypatch):
     assert result[0]["ema200"] == 5277.4
     assert result[0]["atr"] == 125
     assert result[0]["cmf"] == 0.12
+    assert result[0]["rsiPrev5"] == 44
+    assert result[0]["stochasticK"] == 35
+    assert result[0]["stochasticKPrev5"] == 15
+    assert result[0]["stochasticD"] == 28
 
 
 def test_market_context_maps_regime(monkeypatch):
@@ -111,3 +121,54 @@ def test_yahoo_fixture_skips_missing_close(monkeypatch):
     assert len(result) == 1
     assert result[0]["close"] == 9050
     assert result[0]["adjustedClose"] == 9050
+
+
+def test_yahoo_enriches_only_current_recovery_candidates(monkeypatch):
+    provider = YahooProvider()
+    start = date(2026, 1, 1)
+    history = []
+    price = 100.0
+    for index in range(90):
+        price += 1 if index % 4 else -0.3
+        history.append(
+            {
+                "date": (start + timedelta(days=index)).isoformat(),
+                "open": price - 0.5,
+                "high": price + 1,
+                "low": price - 1,
+                "close": price,
+                "adjustedClose": price,
+                "volume": 1_000_000,
+            }
+        )
+    monkeypatch.setattr(
+        provider,
+        "_fetch_history",
+        lambda normalized, range_value: history,
+    )
+    candidate = {
+        "symbol": "TEST",
+        "sector": "Finance",
+        "price": 100,
+        "averageVolume10d": 10_000_000,
+        "ema200": 80,
+        "cmf": 0.2,
+        "rsi": 40,
+        "stochasticK": 30,
+        "stochasticD": 25,
+    }
+    rejected = {
+        **candidate,
+        "symbol": "NOPE",
+        "cmf": -0.2,
+    }
+
+    enriched, failures = provider.enrich_reversal_history(
+        [candidate, rejected],
+        {"available": True, "bullish": True},
+    )
+
+    assert failures == []
+    assert enriched[0]["rsiPrev3"] is not None
+    assert enriched[0]["stochasticKPrev5"] is not None
+    assert "rsiPrev3" not in enriched[1]

@@ -9,8 +9,8 @@ MIN_AVERAGE_TRADED_VALUE = 500_000_000
 MIN_SECTOR_SIZE = 5
 MODEL = {
     "name": "HexInc Conservative Signal Model",
-    "version": "2.0",
-    "label": "Conservative v2",
+    "version": "2.1",
+    "label": "Conservative v2.1",
     "falseSignalDefinition": (
         "A new Strong signal whose 20-session adjusted return, after 0.5% "
         "costs, does not beat the matching IDX Composite return."
@@ -53,11 +53,12 @@ def eligible(stock: Dict[str, Any]) -> bool:
     return bool(price and price > 0 and avg_value and avg_value >= MIN_AVERAGE_TRADED_VALUE)
 
 
-def _series(stock: Dict[str, Any], key: str) -> List[Optional[float]]:
-    return [
-        finite_number(stock.get(key)),
-        finite_number(stock.get(f"{key}Prev1")),
-        finite_number(stock.get(f"{key}Prev2")),
+def _series(
+    stock: Dict[str, Any], key: str, previous_sessions: int = 2
+) -> List[Optional[float]]:
+    return [finite_number(stock.get(key))] + [
+        finite_number(stock.get(f"{key}Prev{offset}"))
+        for offset in range(1, previous_sessions + 1)
     ]
 
 
@@ -120,6 +121,111 @@ def build_sector_context(
             "medianReturn3m": round(median(returns3m), 4) if returns3m else None,
         }
     return result
+
+
+def build_reversal_setup(
+    stock: Dict[str, Any], market_context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    rsi_values = _series(stock, "rsi", 5)
+    stochastic_k_values = _series(stock, "stochasticK", 5)
+    stochastic_d = finite_number(stock.get("stochasticD"))
+    price = finite_number(stock.get("price"))
+    ema200 = finite_number(stock.get("ema200"))
+    cmf = finite_number(stock.get("cmf"))
+    market_context = market_context or {}
+    market_available = bool(market_context.get("available"))
+    market_bullish = bool(market_context.get("bullish"))
+
+    current_data_available = bool(
+        rsi_values[0] is not None
+        and stochastic_k_values[0] is not None
+        and stochastic_d is not None
+        and price is not None
+        and ema200 is not None
+        and cmf is not None
+    )
+    lookback_available = bool(
+        _complete(rsi_values[1:]) and _complete(stochastic_k_values[1:])
+    )
+    current_oversold = bool(
+        rsi_values[0] is not None
+        and stochastic_k_values[0] is not None
+        and rsi_values[0] <= 30
+        and stochastic_k_values[0] < 20
+    )
+    oversold_sessions = [
+        offset
+        for offset in range(1, 6)
+        if rsi_values[offset] is not None
+        and stochastic_k_values[offset] is not None
+        and rsi_values[offset] <= 30
+        and stochastic_k_values[offset] < 20
+    ]
+    checks = {
+        "currentOversold": current_oversold,
+        "priorOversold": bool(oversold_sessions),
+        "rsiRecovered": rsi_values[0] is not None and rsi_values[0] > 30,
+        "stochasticRecovered": (
+            stochastic_k_values[0] is not None and stochastic_k_values[0] > 20
+        ),
+        "stochasticAboveD": (
+            stochastic_k_values[0] is not None
+            and stochastic_d is not None
+            and stochastic_k_values[0] > stochastic_d
+        ),
+        "priceAboveEma200": (
+            price is not None and ema200 is not None and price > ema200
+        ),
+        "cmfPositive": cmf is not None and cmf > 0,
+        "marketAvailable": market_available,
+        "marketBullish": market_available and market_bullish,
+    }
+    current_recovery_checks_pass = bool(
+        current_data_available
+        and checks["rsiRecovered"]
+        and checks["stochasticRecovered"]
+        and checks["stochasticAboveD"]
+        and checks["priceAboveEma200"]
+        and checks["cmfPositive"]
+        and checks["marketBullish"]
+    )
+    recovery_confirmed = bool(
+        current_recovery_checks_pass
+        and lookback_available
+        and checks["priorOversold"]
+    )
+    if not current_data_available or not market_available:
+        status = "Unavailable"
+    elif current_oversold:
+        status = "Oversold Watch"
+    elif current_recovery_checks_pass and not lookback_available:
+        status = "Unavailable"
+    elif recovery_confirmed:
+        status = "Recovery Confirmed"
+    else:
+        status = "None"
+
+    return {
+        "status": status,
+        "available": status != "Unavailable",
+        "lookback": {
+            "sessions": 5,
+            "available": lookback_available,
+            "oversoldDetected": bool(oversold_sessions),
+            "mostRecentOversoldSessionsAgo": (
+                min(oversold_sessions) if oversold_sessions else None
+            ),
+        },
+        "indicators": {
+            "rsi": rsi_values[0],
+            "stochasticK": stochastic_k_values[0],
+            "stochasticD": stochastic_d,
+            "price": price,
+            "ema200": ema200,
+            "cmf": cmf,
+        },
+        "checks": checks,
+    }
 
 
 def score_stock(
@@ -402,6 +508,7 @@ def score_stock(
         signal = "Constructive"
     else:
         signal = "Mixed"
+    reversal_setup = build_reversal_setup(stock, market_context)
 
     return {
         **stock,
@@ -443,6 +550,7 @@ def score_stock(
             "passed": all(strong_checks.values()),
             "checks": strong_checks,
         },
+        "reversalSetup": reversal_setup,
     }
 
 

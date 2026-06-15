@@ -87,6 +87,27 @@ def create_app(
                 warnings.append(
                     "IHSG context is incomplete; Strong signals are suppressed."
                 )
+            try:
+                enrich_reversal = getattr(
+                    yahoo_provider, "enrich_reversal_history"
+                )
+            except AttributeError:
+                enrich_reversal = None
+            if enrich_reversal:
+                try:
+                    raw_stocks, setup_history_failures = enrich_reversal(
+                        raw_stocks, market_context
+                    )
+                    if setup_history_failures:
+                        warnings.append(
+                            "Oversold recovery history is unavailable for "
+                            f"{len(setup_history_failures)} candidate stock(s)."
+                        )
+                except ProviderError as exc:
+                    warnings.append(
+                        "Oversold recovery history is unavailable for some "
+                        f"stocks. {exc}"
+                    )
             ranked, counts = rank_stocks(raw_stocks, market_context)
             snapshot = {
                 "asOf": utc_now(),

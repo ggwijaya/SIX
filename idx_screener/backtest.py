@@ -420,6 +420,8 @@ def run_backtest(
     )
     previous_signals: Dict[str, Dict[str, str]] = {"v1": {}, "v2": {}}
     events: Dict[str, List[Dict[str, Any]]] = {"v1": [], "v2": []}
+    previous_reversal_setups: Dict[str, str] = {}
+    recovery_events: List[Dict[str, Any]] = []
     entries_by_symbol: Dict[str, List[UniverseEntry]] = {}
     for entry in universe:
         entries_by_symbol.setdefault(entry.symbol, []).append(entry)
@@ -437,6 +439,33 @@ def run_backtest(
         market = _market_context(features.get("^JKSE", {}).get(session))
         v2_ranked, _ = rank_stocks(daily, market)
         v1_ranked = _rank_legacy(daily)
+        present_v2 = {str(stock["symbol"]) for stock in v2_ranked}
+        for symbol in list(previous_reversal_setups):
+            if symbol not in present_v2:
+                previous_reversal_setups[symbol] = "None"
+        for stock in v2_ranked:
+            symbol = str(stock["symbol"])
+            setup_status = str(
+                stock.get("reversalSetup", {}).get("status") or "Unavailable"
+            )
+            previous_setup = previous_reversal_setups.get(symbol, "None")
+            if (
+                setup_status == "Recovery Confirmed"
+                and previous_setup != "Recovery Confirmed"
+            ):
+                recovery_events.append(
+                    {
+                        "model": "oversoldRecovery",
+                        "date": session,
+                        "year": session[:4],
+                        "symbol": symbol,
+                        "sector": stock.get("sector") or "Unclassified",
+                        "regime": "Bullish" if market["bullish"] else "Defensive",
+                        "score": stock["score"],
+                        "signal": stock["signal"],
+                    }
+                )
+            previous_reversal_setups[symbol] = setup_status
         for model, ranked in [("v1", v1_ranked), ("v2", v2_ranked)]:
             present = {str(stock["symbol"]) for stock in ranked}
             for symbol in list(previous_signals[model]):
@@ -462,6 +491,7 @@ def run_backtest(
 
     for model_events in events.values():
         _label_events(model_events, adjusted_histories, holding_period, costs)
+    _label_events(recovery_events, adjusted_histories, holding_period, costs)
 
     warnings = []
     if survivorship_biased:
@@ -494,7 +524,7 @@ def run_backtest(
         if symbol != "^JKSE"
     )
     return {
-        "model": "HexInc Conservative Signal Model v2",
+        "model": "HexInc Conservative Signal Model v2.1",
         "validationClaim": not survivorship_biased and not missing_symbols,
         "falseSignalDefinition": (
             f"{holding_period}-session adjusted stock return minus {costs:.1%} "
@@ -518,11 +548,25 @@ def run_backtest(
             "lastSession": sessions[-1] if sessions else None,
         },
         "models": models,
+        "recoverySetup": {
+            "name": "Oversold Recovery",
+            "description": (
+                "Entry-timing diagnostic; it does not alter scores, rankings, "
+                "or Strong and Constructive signals."
+            ),
+            "metrics": _event_metrics(recovery_events),
+            "byYear": _breakdown(recovery_events, "year"),
+            "byRegime": _breakdown(recovery_events, "regime"),
+            "bySector": _breakdown(recovery_events, "sector"),
+            "events": recovery_events,
+        },
     }
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Backtest HexInc v1 versus v2.")
+    parser = argparse.ArgumentParser(
+        description="Backtest HexInc v1, v2.1, and oversold recovery timing."
+    )
     parser.add_argument("--universe-csv", type=Path)
     parser.add_argument("--prices-dir", type=Path)
     parser.add_argument("--limit", type=int, default=20)
@@ -567,6 +611,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "warnings": report["warnings"],
         "v1": report["models"]["v1"]["metrics"],
         "v2": report["models"]["v2"]["metrics"],
+        "recovery": report["recoverySetup"]["metrics"],
     }
     print(json.dumps(summary, indent=2))
     return 0

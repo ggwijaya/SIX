@@ -79,6 +79,7 @@ function applyFilters() {
   const query = $("#searchInput").value.trim().toLowerCase();
   const sector = $("#sectorFilter").value;
   const signal = $("#signalFilter").value;
+  const setup = $("#setupFilter").value;
   const minimumScore = Number($("#scoreFilter").value);
   const rsiRange = $("#rsiFilter").value;
   const minimumLiquidity = Number($("#liquidityFilter").value);
@@ -89,6 +90,7 @@ function applyFilters() {
     if (query && !identity.includes(query)) return false;
     if (sector && stock.sector !== sector) return false;
     if (signal && stock.signal !== signal) return false;
+    if (setup && stock.reversalSetup?.status !== setup) return false;
     if (stock.score < minimumScore) return false;
     if ((stock.averageTradedValue || 0) < minimumLiquidity) return false;
     if (rsiRange) {
@@ -112,12 +114,13 @@ function applyFilters() {
 function renderRows() {
   $("#resultCount").textContent = state.filtered.length;
   if (!state.filtered.length) {
-    stockRows.innerHTML = '<tr><td colspan="10" class="empty-state">No stocks match these filters. Try widening the screen.</td></tr>';
+    stockRows.innerHTML = '<tr><td colspan="11" class="empty-state">No stocks match these filters. Try widening the screen.</td></tr>';
     return;
   }
   stockRows.innerHTML = state.filtered.map((stock) => {
     const changeClass = stock.change >= 0 ? "positive" : "negative";
     const changePrefix = stock.change > 0 ? "+" : "";
+    const setupStatus = stock.reversalSetup?.status || "Unavailable";
     return `<tr class="stock-row" tabindex="0" data-symbol="${escapeHtml(stock.symbol)}">
       <td class="rank">${stock.rank}</td>
       <td><span class="ticker">${escapeHtml(stock.symbol)}</span><span class="company">${escapeHtml(stock.company)}</span></td>
@@ -126,6 +129,7 @@ function renderRows() {
       <td class="numeric ${changeClass}">${changePrefix}${formatNumber(stock.change, 2)}%</td>
       <td class="numeric score-cell"><strong>${formatNumber(stock.score, 1)}</strong><span class="score-track"><i style="width:${stock.score}%"></i></span></td>
       <td><span class="signal ${stock.signal.toLowerCase()}">${stock.signal}</span></td>
+      <td><span class="setup-badge ${setupStatusClass(setupStatus)}">${escapeHtml(compactSetupStatus(setupStatus))}</span></td>
       <td class="numeric">${formatNumber(stock.rsi, 1)}</td>
       <td class="numeric">${formatNumber(stock.relativeVolume, 2)}×</td>
       <td class="numeric">${formatIDR(stock.averageTradedValue)}</td>
@@ -150,7 +154,7 @@ async function loadScreener() {
     populateSectors();
     applyFilters();
   } catch (error) {
-    stockRows.innerHTML = `<tr><td colspan="10" class="empty-state">${escapeHtml(error.message)}</td></tr>`;
+    stockRows.innerHTML = `<tr><td colspan="11" class="empty-state">${escapeHtml(error.message)}</td></tr>`;
     $("#freshnessLabel").textContent = "Market data unavailable";
     $(".status-dot").classList.add("stale");
     setAlert(error.message);
@@ -212,6 +216,11 @@ function renderDetail(stock, history, stale) {
   const strongGate = stock.strongGate || {};
   const gateChecks = strongGate.checks || {};
   const deductions = stock.deductions || [];
+  const reversalSetup = stock.reversalSetup || {};
+  const setupChecks = reversalSetup.checks || {};
+  const setupLookback = reversalSetup.lookback || {};
+  const setupIndicators = reversalSetup.indicators || {};
+  const setupStatus = reversalSetup.status || "Unavailable";
   $("#drawerContent").innerHTML = `
     <p class="detail-symbol">IDX:${escapeHtml(stock.symbol)} ${stale ? "· CACHED" : ""}</p>
     <h2 class="detail-title">${escapeHtml(stock.company || stock.symbol)}</h2>
@@ -252,6 +261,19 @@ function renderDetail(stock, history, stale) {
       </div>
     </section>
     <section class="detail-section">
+      <h3>Oversold recovery · <span class="setup-badge ${setupStatusClass(setupStatus)}">${escapeHtml(setupStatus)}</span></h3>
+      <p class="setup-note">Timing diagnostic only. It does not change the score, rank, or signal.</p>
+      <div class="indicator-grid">
+        <div><span>RSI 14</span><strong>${formatNumber(setupIndicators.rsi, 1)}</strong></div>
+        <div><span>STOCHASTIC %K</span><strong>${formatNumber(setupIndicators.stochasticK, 1)}</strong></div>
+        <div><span>STOCHASTIC %D</span><strong>${formatNumber(setupIndicators.stochasticD, 1)}</strong></div>
+        <div><span>LOOKBACK</span><strong>${formatNumber(setupLookback.sessions, 0)} sessions</strong></div>
+        <div><span>PRIOR OVERSOLD</span><strong>${setupLookback.oversoldDetected ? "YES" : "NO"}</strong></div>
+        <div><span>MOST RECENT</span><strong>${setupLookback.mostRecentOversoldSessionsAgo == null ? "—" : `${setupLookback.mostRecentOversoldSessionsAgo} session(s) ago`}</strong></div>
+      </div>
+      <div class="tag-list setup-checks">${Object.entries(setupChecks).map(([key, passed]) => `<span class="tag ${passed ? "" : "risk"}">${passed ? "PASS" : "FAIL"} · ${escapeHtml(humanizeKey(key))}</span>`).join("")}</div>
+    </section>
+    <section class="detail-section">
       <h3>Strong gate · ${strongGate.passed ? "PASSED" : "NOT PASSED"}</h3>
       <div class="tag-list">${Object.entries(gateChecks).map(([key, passed]) => `<span class="tag ${passed ? "" : "risk"}">${passed ? "PASS" : "FAIL"} · ${escapeHtml(humanizeKey(key))}</span>`).join("")}</div>
     </section>
@@ -275,6 +297,16 @@ function renderDetail(stock, history, stale) {
 
 function humanizeKey(value) {
   return String(value).replace(/([A-Z])/g, " $1").replace(/^./, (character) => character.toUpperCase());
+}
+
+function setupStatusClass(status) {
+  return String(status || "Unavailable").toLowerCase().replace(/\s+/g, "-");
+}
+
+function compactSetupStatus(status) {
+  if (status === "Recovery Confirmed") return "Recovery";
+  if (status === "Oversold Watch") return "Oversold";
+  return status;
 }
 
 function formatSignedPercent(value) {

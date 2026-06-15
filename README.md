@@ -41,4 +41,6 @@ python backtest.py --universe-csv data/universe.csv --prices-dir data/prices
 
 Explicit risk deductions are subtracted from the 100-point pre-deduction score. Strong signals additionally require a bullish IHSG regime, three-session EMA alignment, rising EMA slopes, positive market and sector relative strength, confirmed money flow, RSI no higher than 75, and ATR no higher than 6% of price.
 
+HexInc also reports an oversold recovery timing setup based on RSI and Stochastic confirmation. This diagnostic does not alter scores, rankings, or Strong and Constructive signals.
+
 Only primary equities with positive prices and at least IDR 500 million in estimated 10-day average traded value qualify. This threshold controls the screening universe; it does not guarantee executable capacity for every investor.
